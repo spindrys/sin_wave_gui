@@ -1,8 +1,7 @@
 from PyQt5.QtWidgets import (QApplication, 
                              QVBoxLayout, QWidget, QLabel, QPushButton, 
-                             QMainWindow, QLineEdit, QHBoxLayout, QVBoxLayout
+                             QMainWindow, QLineEdit, QHBoxLayout, QVBoxLayout, 
 )
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 # Only needed for access to command line arguments
 import sys
 import matplotlib.pyplot as plt # For ploting
@@ -19,29 +18,17 @@ import matplotlib.figure as mpl_fig
 import matplotlib.animation as anim
 import numpy as np
 
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QThreadPool, QRunnable
+from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QThreadPool, QRunnable, QTimer
 
 X_LEN = 5 
 
-class FileSavers(QRunnable):
-    def __init__(self, worker_id: UUID, files: list[str]) -> None:
-        super().__init__()
-        # Allow for signals to be used
-        self.worker_id = worker_id
-        self.files_to_process = files
-        self.signals: WorkerSignals = WorkerSignals()
+FRAME_INTERVAL = 2 * np.pi 
 
-    def run(self):
-        """
-        This is where the work is done. This actually has to be a method called run() for QRunnable to work.
-        """
-        self.signals.signal_started.emit(self.files_to_process)
-        for i in range(1, 100, 10):
-            sleep(0.1)
-            self.signals.signal_progress.emit(i)
-        self.signals.signal_finished.emit(self.worker_id)
 
-class MyFigureCanvas(anim.FuncAnimation, FigureCanvasQTAgg):
+ 
+
+
+class MyFigureCanvas(FigureCanvasQTAgg):
     '''
     This is the FigureCanvas in which the live plot is drawn.
 
@@ -62,29 +49,48 @@ class MyFigureCanvas(anim.FuncAnimation, FigureCanvasQTAgg):
         self.offset = 0 
         self.frequency = 1 
 
+        self.start_pushed = False
+
+        self.last_saved_index = 0
+
 
         self._ax_  = self.figure.subplots()
         self.ln, = self._ax_.plot([], [])
 
         self._ax_.set_ylim(-1, 1)
-        frames=np.linspace(0, 2 * np.pi)
-        # Call superclass constructors
-        anim.FuncAnimation.__init__(self, fig = self.figure, func=self._update_canvas_, frames=frames, repeat=True,
-                                    blit=False)
+        self._ax_.set_xlim(-X_LEN, X_LEN )
 
+        
+        frames=np.linspace(0, FRAME_INTERVAL)
+        self.animation = anim.FuncAnimation(fig = self.figure, func=self.sin_func, frames=frames, repeat=True,
+                                    blit=False)
+        
+       
+        
+        
         return
     
-    def _update_canvas_(self, frames) -> None:
+    # def ani_init(self):
+    #     self.animation.pause() 
+    #     return self.ln
+    
+    def start_animation(self):
+        self.animation.resume()
+        
+   
+    def sin_func(self, frame) -> None:
         '''
         This function gets called regularly by the timer.
 
         '''
-        if self.index > 0 and frames == 0:
+        if not self.start_pushed:
+            self.animation.pause() 
+        if self.index > 0 and frame == 0:
             # on repeat, we want to skip first frame 
             return self.ln
         
-        x_val = frames + (self.index * 2 * np.pi)
-        y_val= self.amp * np.sin(frames* self.frequency) + self.offset
+        x_val = frame + (self.index * FRAME_INTERVAL)
+        y_val= self.amp * np.sin(frame * self.frequency) + self.offset
     
 
         self.x_data.append(x_val)
@@ -94,13 +100,13 @@ class MyFigureCanvas(anim.FuncAnimation, FigureCanvasQTAgg):
         # move plot to follow sin wave 
         self._ax_.set_xlim(x_val-X_LEN, x_val+X_LEN )
         
-        if frames == 2 * np.pi:
+        if frame == 2 * np.pi:
             # we have just finished a loop, next iteration starts over
             self.index += 1
         
         return self.ln
     
-    def log_data(self):
+
 
     
 
@@ -119,11 +125,19 @@ class MainWindow(QMainWindow):
         offset_input_widget = self.set_offset_widget()
         freq_input_widget = self.set_freq_widget()
         
-        
+        self.start_btn=QPushButton('Start')
+        self.start_btn.clicked.connect(self.start_sin_ani)
+
+        self.log_timer=QTimer()
+        self.log_timer.timeout.connect(self.log_data)
+
+        self.save_start_index = 0 
+        self.save_data = []
   
 
 
         vertical_layout = QVBoxLayout()
+        vertical_layout.addWidget(self.start_btn)
         vertical_layout.addWidget(amp_input_widget)
         vertical_layout.addWidget(offset_input_widget)
         vertical_layout.addWidget(freq_input_widget)
@@ -140,7 +154,22 @@ class MainWindow(QMainWindow):
         widget = QWidget()
         widget.setLayout(horizontal_layout)
         self.setCentralWidget(widget)
-       
+    
+    def log_data(self):
+        print("logging data")
+        
+        y_data = self.figure_canvas.ln.get_ydata()
+        
+        save_data = y_data[self.save_start_index:]
+        self.save_start_index = len(y_data)
+        self.save_data += save_data
+        print("logged")
+
+    def start_sin_ani(self):
+        self.log_timer.start(3000) # in milliseconds
+        self.start_btn.setEnabled(False)
+        self.figure_canvas.start_animation()
+        self.figure_canvas.start_pushed = True
 
     def set_amp_widget(self):
         amp_input_widget = QLineEdit()
