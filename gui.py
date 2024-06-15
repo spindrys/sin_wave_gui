@@ -19,8 +19,27 @@ import matplotlib.figure as mpl_fig
 import matplotlib.animation as anim
 import numpy as np
 
+from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QThreadPool, QRunnable
 
 X_LEN = 5 
+
+class FileSavers(QRunnable):
+    def __init__(self, worker_id: UUID, files: list[str]) -> None:
+        super().__init__()
+        # Allow for signals to be used
+        self.worker_id = worker_id
+        self.files_to_process = files
+        self.signals: WorkerSignals = WorkerSignals()
+
+    def run(self):
+        """
+        This is where the work is done. This actually has to be a method called run() for QRunnable to work.
+        """
+        self.signals.signal_started.emit(self.files_to_process)
+        for i in range(1, 100, 10):
+            sleep(0.1)
+            self.signals.signal_progress.emit(i)
+        self.signals.signal_finished.emit(self.worker_id)
 
 class MyFigureCanvas(anim.FuncAnimation, FigureCanvasQTAgg):
     '''
@@ -42,10 +61,7 @@ class MyFigureCanvas(anim.FuncAnimation, FigureCanvasQTAgg):
         self.amp = 1
         self.offset = 0 
         self.frequency = 1 
-      
-        
-        fs = 100 # sample rate 
-        f = 2 # the frequency of the signal
+
 
         self._ax_  = self.figure.subplots()
         self.ln, = self._ax_.plot([], [])
@@ -83,6 +99,9 @@ class MyFigureCanvas(anim.FuncAnimation, FigureCanvasQTAgg):
             self.index += 1
         
         return self.ln
+    
+    def log_data(self):
+
     
 
 
