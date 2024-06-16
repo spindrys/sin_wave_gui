@@ -1,34 +1,39 @@
 from PyQt5.QtWidgets import (QApplication, 
-                             QVBoxLayout, QWidget, QLabel, QPushButton, 
+                             QVBoxLayout, QWidget, QPushButton, 
                              QMainWindow, QLineEdit, QHBoxLayout, QVBoxLayout, 
 )
 # Only needed for access to command line arguments
 import sys
-import matplotlib.pyplot as plt # For ploting
-import numpy as np # to work with numerical data efficiently\
-from matplotlib.figure import Figure
 from typing import *
 import sys
-import os
 import time
-from matplotlib.backends.qt_compat import QtCore, QtWidgets
 from numpy.typing import ArrayLike
-# from PyQt5 import QtWidgets, QtCore
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
-import matplotlib as mpl
 import matplotlib.figure as mpl_fig
 import matplotlib.animation as anim
+import datetime
 import numpy as np
 
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QThreadPool, QRunnable, QTimer
 
-X_LEN = 5 
 
-FRAME_INTERVAL = 2 * np.pi 
+from PyQt5.QtCore import QThreadPool, QRunnable
 
-TIME_INTERVAL_SECONDS = .25
+X_LEN = 5
+# x axis +- domain 
+
+Y_RANGE = 10 
+# y axis +- range
+
+TIME_INTERVAL_SECONDS = .1
+# fetch data and update figure interval
 
 TIME_INTERVAL_MILLISECONDS = TIME_INTERVAL_SECONDS * 1000
+
+LOG_INTERNAL_SECONDS = 3
+# log data to file interval
+
+Y_ROUND = 4
+# decimal places to round y value to 
 
 class SinData:
 
@@ -39,36 +44,27 @@ class SinData:
         self.offset = 0 
         self.frequency = 1 
 
+        self.save_start_index = 0 
+
 class SinDataFetcher(QRunnable):
     def __init__(self, sin_data: SinData):
         super().__init__()
-        self.frames=np.linspace(0, FRAME_INTERVAL)
         self.sin_data = sin_data
-        self.current_frame_index = 0
-        self.loops = 0 
 
     def run(self):
+        t0 = time.time()
         while True:
 
-            if self.current_frame_index == len(self.frames):
-                self.current_frame_index = 1
-                self.loops += 1
-                
-
-            current_frame = self.frames[self.current_frame_index]
-
-            x_val = current_frame + (self.loops * FRAME_INTERVAL)
-                
+  
+            time_value = time.time() - t0
             
-            
-            y_val= self.sin_data.amp * np.sin(current_frame * self.sin_data.frequency) + self.sin_data.offset
+            y_val= round(self.sin_data.amp * np.sin(time_value * self.sin_data.frequency) + self.sin_data.offset, Y_ROUND)
 
-            self.sin_data.x_data.append(x_val)
+
+            self.sin_data.x_data.append(time_value)
             self.sin_data.y_data.append(y_val)
 
-            self.current_frame_index += 1 
             time.sleep(TIME_INTERVAL_SECONDS)
-
 
 
 class MyFigureCanvas(FigureCanvasQTAgg):
@@ -80,28 +76,23 @@ class MyFigureCanvas(FigureCanvasQTAgg):
 
         FigureCanvasQTAgg.__init__(self, mpl_fig.Figure())
 
-        self.index = 0
+        
         self.sin_data = sin_data
 
-        self.amp = 1
-        self.offset = 0 
-        self.frequency = 1 
 
         self.start_pushed = False
 
-        self.last_saved_index = 0
-
-
         self._ax_  = self.figure.subplots()
-        self.ln, = self._ax_.plot([], [])
+        self.sin_line, = self._ax_.plot([], [])
 
-        self._ax_.set_ylim(-1, 1)
+        self._ax_.set_ylim(-Y_RANGE, Y_RANGE)
         self._ax_.set_xlim(-X_LEN, X_LEN )
 
-    
+        self._ax_.set_ylabel(str("Data"))
+        self._ax_.set_xlabel(str("Seconds"))
         
         
-        self.animation = anim.FuncAnimation(fig = self.figure, func=self.sin_func,
+        self.animation = anim.FuncAnimation(fig = self.figure, func=self.update_sin_line,
                                     blit=False, interval=TIME_INTERVAL_MILLISECONDS)
         
         
@@ -110,39 +101,20 @@ class MyFigureCanvas(FigureCanvasQTAgg):
         self.animation.resume()
     
    
-    def sin_func(self, _) -> None:
+    def update_sin_line(self, _) -> None:
 
         if not self.start_pushed:
+            # do not start updating sin line till start button is pushed
             return 
   
 
-        self.ln.set_data(self.sin_data.x_data,self.sin_data.y_data)
+        self.sin_line.set_data(self.sin_data.x_data,self.sin_data.y_data)
 
         x_val = self.sin_data.x_data[-1]
         # move plot to follow sin wave 
         self._ax_.set_xlim(x_val-X_LEN, x_val+X_LEN )
         
-    
-    
-
-
-class DataLogRunnable(QRunnable):
-    def __init__(self, data_to_save: ArrayLike, save_start_index:int):
-        super().__init__()
-        self.data_to_save = data_to_save
-        self.save_start_index = save_start_index
-
-    def run(self):
-        print("logging data")
-        
-        
-        
-        save_data = self.data_to_save[self.save_start_index:]
-        time.sleep(10)
-        print("logged")
-    
-      
-
+  
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -156,26 +128,19 @@ class MainWindow(QMainWindow):
         
     
 
-        amp_input_widget = self.set_amp_widget()
-        offset_input_widget = self.set_offset_widget()
-        freq_input_widget = self.set_freq_widget()
+        self.amp_input_widget = self.set_amp_widget()
+        self.offset_input_widget = self.set_offset_widget()
+        self.freq_input_widget = self.set_freq_widget()
         
         self.start_btn=QPushButton('Start')
         self.start_btn.clicked.connect(self.start_sin_ani)
-
-        self.log_timer=QTimer()
-        self.log_timer.timeout.connect(self.start_log_runnable)
-
-        self.save_start_index = 0 
-        self.save_data = []
   
-
 
         vertical_layout = QVBoxLayout()
         vertical_layout.addWidget(self.start_btn)
-        vertical_layout.addWidget(amp_input_widget)
-        vertical_layout.addWidget(offset_input_widget)
-        vertical_layout.addWidget(freq_input_widget)
+        vertical_layout.addWidget(self.amp_input_widget)
+        vertical_layout.addWidget(self.offset_input_widget)
+        vertical_layout.addWidget(self.freq_input_widget)
         
         vertical_widget = QWidget()
         vertical_widget.setLayout(vertical_layout)
@@ -190,21 +155,25 @@ class MainWindow(QMainWindow):
         widget.setLayout(horizontal_layout)
         self.setCentralWidget(widget)
     
-    def start_log_runnable(self):
-        pool = QThreadPool.globalInstance()
-    
-        data_chunk = self.figure_canvas.ln.get_xydata()
-        runnable = DataLogRunnable(data_chunk, self.save_start_index)
-        self.save_start_index=len(data_chunk)
-        
-        pool.start(runnable)
 
     def start_sin_ani(self):
         pool = QThreadPool.globalInstance()
         sin_data_fetcher = SinDataFetcher(self.sin_data)
+
+        current_time = datetime.datetime.now(datetime.UTC)
+        date_time_format = "%Y_%m_%d-%H-%M-%S-%f%Z"
+        current_time_str = current_time.strftime(date_time_format)
+
+        file_name = f"sin_log_{current_time_str}.npy"
+        
+        data_log_runnable = DataLogRunnable(self.sin_data, file_name)
+        
+
         pool.start(sin_data_fetcher)
+        pool.start(data_log_runnable)
+
         self.figure_canvas.start_pushed = True
-        self.log_timer.start(3000) # in milliseconds
+        
         self.start_btn.setEnabled(False)
 
     def set_amp_widget(self):
@@ -234,14 +203,10 @@ class MainWindow(QMainWindow):
         
         try: 
             amp = float(text)
-            self.figure_canvas.amp = amp
+            self.sin_data.amp = amp
         except ValueError:
-            # somehow get message to app 
-            # use label next to it ? 
-            print("fix")
-            #self.amp_input_widget.setText("Enter a valid real number")
-            # #sleep maybe
-            # self.amp_input_widget.setText(str(self.amp))
+            self.amp_input_widget.setText("Enter a valid real number")
+          
 
 
     def offset_update(self, text: str):
@@ -249,44 +214,46 @@ class MainWindow(QMainWindow):
         try: 
             offset = float(text)
             
-            self.figure_canvas.offset = offset
+            self.sin_data.offset = offset
         except ValueError:
-            # somehow get message to app 
-            # use label next to it ? 
-            print("fix")
-            #self.amp_input_widget.setText("Enter a valid real number")
-            # #sleep maybe
-            # self.amp_input_widget.setText(str(self.amp))
+            self.offset_input_widget.setText("Enter a valid real number")
 
     def freq_update(self, text: str):
         
         try: 
             freq = float(text)
             
-            self.figure_canvas.frequency = freq
+            self.sin_data.frequency = freq
         except ValueError:
-            # somehow get message to app 
-            # use label next to it ? 
-            print("fix")
-            #self.amp_input_widget.setText("Enter a valid real number")
-            # #sleep maybe
-            # self.amp_input_widget.setText(str(self.amp))
+            self.freq_input_widget.setText("Enter a valid real number")
 
-# 1. Subclass QRunnable
+
 class DataLogRunnable(QRunnable):
-    def __init__(self, data_to_save: ArrayLike, save_start_index:int):
+    def __init__(self, sin_data: SinData, file_name: str):
         super().__init__()
-        self.data_to_save = data_to_save
-        self.save_start_index = save_start_index
+        self.sin_data = sin_data
+        self.save_start_index = 0
+        self.file_name = file_name
+
+        
 
     def run(self):
-        print("logging data")
-        
-        
-        
-        save_data = self.data_to_save[self.save_start_index:]
-        time.sleep(10)
-        print("logged")
+        while True:
+            time.sleep(LOG_INTERNAL_SECONDS)
+            print("logging data")
+            x_data_chunk = self.sin_data.x_data[self.save_start_index:]
+            y_data_chunk = self.sin_data.y_data[self.save_start_index:]
+            save_data = [[x,y] for x, y in zip(x_data_chunk,y_data_chunk)]
+
+            with open(self.file_name, 'ab') as f:
+                np.savetxt(f,save_data)
+    
+            # for testing/ viewing data : 
+            with open(self.file_name, 'rb') as f:
+                a = np.loadtxt(f)
+                print(a)
+
+            self.save_start_index = len(self.sin_data.x_data)
     
       
 
@@ -296,5 +263,3 @@ window = MainWindow()
 window.show()
 app.exec()
 
-# Your application won't reach here until you exit and the event
-# loop has stopped.
