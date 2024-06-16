@@ -26,8 +26,49 @@ X_LEN = 5
 
 FRAME_INTERVAL = 2 * np.pi 
 
+TIME_INTERVAL_SECONDS = .25
 
- 
+TIME_INTERVAL_MILLISECONDS = TIME_INTERVAL_SECONDS * 1000
+
+class SinData:
+
+    def __init__(self):
+        self.x_data = []
+        self.y_data = []
+        self.amp = 1
+        self.offset = 0 
+        self.frequency = 1 
+
+class SinDataFetcher(QRunnable):
+    def __init__(self, sin_data: SinData):
+        super().__init__()
+        self.frames=np.linspace(0, FRAME_INTERVAL)
+        self.sin_data = sin_data
+        self.current_frame_index = 0
+        self.loops = 0 
+
+    def run(self):
+        while True:
+
+            if self.current_frame_index == len(self.frames):
+                self.current_frame_index = 1
+                self.loops += 1
+                
+
+            current_frame = self.frames[self.current_frame_index]
+
+            x_val = current_frame + (self.loops * FRAME_INTERVAL)
+                
+            
+            
+            y_val= self.sin_data.amp * np.sin(current_frame * self.sin_data.frequency) + self.sin_data.offset
+
+            self.sin_data.x_data.append(x_val)
+            self.sin_data.y_data.append(y_val)
+
+            self.current_frame_index += 1 
+            time.sleep(TIME_INTERVAL_SECONDS)
+
 
 
 class MyFigureCanvas(FigureCanvasQTAgg):
@@ -35,13 +76,13 @@ class MyFigureCanvas(FigureCanvasQTAgg):
     This is the FigureCanvas in which the live plot is drawn.
 
     '''
-    def __init__(self) -> None:
+    def __init__(self, sin_data: SinData,) -> None:
 
         FigureCanvasQTAgg.__init__(self, mpl_fig.Figure())
 
         self.index = 0
-        self.x_data = []
-        self.y_data = []
+        self.sin_data = sin_data
+
         self.amp = 1
         self.offset = 0 
         self.frequency = 1 
@@ -57,52 +98,31 @@ class MyFigureCanvas(FigureCanvasQTAgg):
         self._ax_.set_ylim(-1, 1)
         self._ax_.set_xlim(-X_LEN, X_LEN )
 
+    
         
-        frames=np.linspace(0, FRAME_INTERVAL)
-        self.animation = anim.FuncAnimation(fig = self.figure, func=self.sin_func, frames=frames, repeat=True,
-                                    blit=False)
+        
+        self.animation = anim.FuncAnimation(fig = self.figure, func=self.sin_func,
+                                    blit=False, interval=TIME_INTERVAL_MILLISECONDS)
         
         
 
     def start_animation(self):
         self.animation.resume()
     
-    def start_log_runnable(self):
-        pool = QThreadPool.globalInstance()
-    
-        data_chunk = self.figure_canvas.ln.get_xydata()
-        runnable = DataLogRunnable(data_chunk, self.save_start_index)
-        self.save_start_index=len(data_chunk)
-        
-        pool.start(runnable)
    
-    def sin_func(self, frame) -> None:
-        '''
-        This function gets called regularly by the timer.
+    def sin_func(self, _) -> None:
 
-        '''
         if not self.start_pushed:
-            self.animation.pause() 
-        if self.index > 0 and frame == 0:
-            # on repeat, we want to skip first frame 
-            return self.ln
-        
-        x_val = frame + (self.index * FRAME_INTERVAL)
-        y_val= self.amp * np.sin(frame * self.frequency) + self.offset
-    
+            return 
+  
 
-        self.x_data.append(x_val)
-        self.y_data.append(y_val)
-        self.ln.set_data(self.x_data,self.y_data)
+        self.ln.set_data(self.sin_data.x_data,self.sin_data.y_data)
 
+        x_val = self.sin_data.x_data[-1]
         # move plot to follow sin wave 
         self._ax_.set_xlim(x_val-X_LEN, x_val+X_LEN )
         
-        if frame == 2 * np.pi:
-            # we have just finished a loop, next iteration starts over
-            self.index += 1
-        
-        return self.ln
+    
     
 
 
@@ -131,7 +151,9 @@ class MainWindow(QMainWindow):
         
         self.setWindowTitle("A Sin Wave")
 
-        self.figure_canvas = MyFigureCanvas()
+        self.sin_data = SinData()
+        self.figure_canvas = MyFigureCanvas(self.sin_data)
+        
     
 
         amp_input_widget = self.set_amp_widget()
@@ -178,10 +200,12 @@ class MainWindow(QMainWindow):
         pool.start(runnable)
 
     def start_sin_ani(self):
+        pool = QThreadPool.globalInstance()
+        sin_data_fetcher = SinDataFetcher(self.sin_data)
+        pool.start(sin_data_fetcher)
+        self.figure_canvas.start_pushed = True
         self.log_timer.start(3000) # in milliseconds
         self.start_btn.setEnabled(False)
-        self.figure_canvas.start_animation()
-        self.figure_canvas.start_pushed = True
 
     def set_amp_widget(self):
         amp_input_widget = QLineEdit()
