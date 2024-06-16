@@ -10,7 +10,9 @@ from matplotlib.figure import Figure
 from typing import *
 import sys
 import os
+import time
 from matplotlib.backends.qt_compat import QtCore, QtWidgets
+from numpy.typing import ArrayLike
 # from PyQt5 import QtWidgets, QtCore
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 import matplotlib as mpl
@@ -34,12 +36,7 @@ class MyFigureCanvas(FigureCanvasQTAgg):
 
     '''
     def __init__(self) -> None:
-        '''
-        :param x_len:       The nr of data points shown in one plot.
-        :param y_range:     Range on y-axis.
-        :param interval:    Get a new datapoint every .. milliseconds.
 
-        '''
         FigureCanvasQTAgg.__init__(self, mpl_fig.Figure())
 
         self.index = 0
@@ -65,18 +62,19 @@ class MyFigureCanvas(FigureCanvasQTAgg):
         self.animation = anim.FuncAnimation(fig = self.figure, func=self.sin_func, frames=frames, repeat=True,
                                     blit=False)
         
-       
         
-        
-        return
-    
-    # def ani_init(self):
-    #     self.animation.pause() 
-    #     return self.ln
-    
+
     def start_animation(self):
         self.animation.resume()
+    
+    def start_log_runnable(self):
+        pool = QThreadPool.globalInstance()
+    
+        data_chunk = self.figure_canvas.ln.get_xydata()
+        runnable = DataLogRunnable(data_chunk, self.save_start_index)
+        self.save_start_index=len(data_chunk)
         
+        pool.start(runnable)
    
     def sin_func(self, frame) -> None:
         '''
@@ -108,7 +106,22 @@ class MyFigureCanvas(FigureCanvasQTAgg):
     
 
 
+class DataLogRunnable(QRunnable):
+    def __init__(self, data_to_save: ArrayLike, save_start_index:int):
+        super().__init__()
+        self.data_to_save = data_to_save
+        self.save_start_index = save_start_index
+
+    def run(self):
+        print("logging data")
+        
+        
+        
+        save_data = self.data_to_save[self.save_start_index:]
+        time.sleep(10)
+        print("logged")
     
+      
 
 
 class MainWindow(QMainWindow):
@@ -129,7 +142,7 @@ class MainWindow(QMainWindow):
         self.start_btn.clicked.connect(self.start_sin_ani)
 
         self.log_timer=QTimer()
-        self.log_timer.timeout.connect(self.log_data)
+        self.log_timer.timeout.connect(self.start_log_runnable)
 
         self.save_start_index = 0 
         self.save_data = []
@@ -155,15 +168,14 @@ class MainWindow(QMainWindow):
         widget.setLayout(horizontal_layout)
         self.setCentralWidget(widget)
     
-    def log_data(self):
-        print("logging data")
+    def start_log_runnable(self):
+        pool = QThreadPool.globalInstance()
+    
+        data_chunk = self.figure_canvas.ln.get_xydata()
+        runnable = DataLogRunnable(data_chunk, self.save_start_index)
+        self.save_start_index=len(data_chunk)
         
-        y_data = self.figure_canvas.ln.get_ydata()
-        
-        save_data = y_data[self.save_start_index:]
-        self.save_start_index = len(y_data)
-        self.save_data += save_data
-        print("logged")
+        pool.start(runnable)
 
     def start_sin_ani(self):
         self.log_timer.start(3000) # in milliseconds
@@ -235,6 +247,25 @@ class MainWindow(QMainWindow):
             #self.amp_input_widget.setText("Enter a valid real number")
             # #sleep maybe
             # self.amp_input_widget.setText(str(self.amp))
+
+# 1. Subclass QRunnable
+class DataLogRunnable(QRunnable):
+    def __init__(self, data_to_save: ArrayLike, save_start_index:int):
+        super().__init__()
+        self.data_to_save = data_to_save
+        self.save_start_index = save_start_index
+
+    def run(self):
+        print("logging data")
+        
+        
+        
+        save_data = self.data_to_save[self.save_start_index:]
+        time.sleep(10)
+        print("logged")
+    
+      
+
 
 app = QApplication(sys.argv)
 window = MainWindow()
