@@ -7,10 +7,11 @@ from PyQt5.QtCore import QRunnable
 
 from sin_wave_app.data_class.sin_data import SinData
 from sin_wave_app.constants import LOG_INTERNAL_SECONDS
+from sin_wave_app.utils import IsRunning
 
 class DataLogRunnable(QRunnable):
     """Data log runner."""
-    def __init__(self, sin_data: SinData, file_name: str):
+    def __init__(self, sin_data: SinData, file_name: str, is_running_obj: IsRunning):
         """Initializes data log runner.
 
         Args:
@@ -21,6 +22,7 @@ class DataLogRunnable(QRunnable):
         self.sin_data = sin_data
         self.save_start_index = 0
         self.file_name = file_name
+        self.is_running_obj = is_running_obj
 
     def run(self):
         """Data log runner.
@@ -30,7 +32,7 @@ class DataLogRunnable(QRunnable):
             New indexes are append to file.
         
         """
-        while True:
+        while self.is_running_obj.is_running:
             time.sleep(LOG_INTERNAL_SECONDS)
             print("logging data")
             x_data_chunk = self.sin_data.x_data[self.save_start_index:]

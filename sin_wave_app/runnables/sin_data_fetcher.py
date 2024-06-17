@@ -6,11 +6,12 @@ from PyQt5.QtCore import QRunnable
 
 from sin_wave_app.data_class.sin_data import SinData
 from sin_wave_app.constants import TIME_INTERVAL_SECONDS, Y_ROUND
+from sin_wave_app.utils import IsRunning
 
 
 class SinDataFetcher(QRunnable):
     """Runnable that updates sin data class on an interval."""
-    def __init__(self, sin_data: SinData):
+    def __init__(self, sin_data: SinData, is_running_obj: IsRunning):
         """Initializes runner with sin data.
 
         Args:
@@ -18,6 +19,7 @@ class SinDataFetcher(QRunnable):
         """
         super().__init__()
         self.sin_data = sin_data
+        self.is_running_obj = is_running_obj
 
     def run(self):
         """Sin data fetcher.
@@ -26,7 +28,7 @@ class SinDataFetcher(QRunnable):
            
         """
         t0 = time.time()
-        while True:
+        while self.is_running_obj.is_running:
 
   
             time_value = time.time() - t0

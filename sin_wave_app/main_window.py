@@ -1,26 +1,29 @@
 """Main PyQt5 Window for Sin Wave App."""
 
 import datetime
-from typing import Callable
 
 from PyQt5.QtWidgets import (QVBoxLayout, QWidget, QPushButton, 
                              QMainWindow, QLineEdit, QHBoxLayout, QVBoxLayout)
 from PyQt5.QtCore import QThreadPool
 
+from sin_wave_app.utils import IsRunning
 from sin_wave_app.figure_class.ani_sin_figure import AnimatedSinFigure
 from sin_wave_app.data_class.sin_data import SinData
 from sin_wave_app.runnables.log_runner import DataLogRunnable
-from sin_wave_app.runnables.sin_data_runner import SinDataFetcher
+from sin_wave_app.runnables.sin_data_fetcher import SinDataFetcher
+
+
 
 class MainWindow(QMainWindow):
     """Main Window for Sin Wave App."""
 
-    def __init__(self):
+    def __init__(self, is_running_obj: IsRunning):
         """Initializes Main Window, necessary widgets and layouts."""
         super().__init__()
 
         self.setWindowTitle("A Sin Wave")
 
+        self.is_running_class = is_running_obj
         self.sin_data = SinData()
         self.ani_sin_fig = AnimatedSinFigure(self.sin_data)
 
@@ -54,9 +57,10 @@ class MainWindow(QMainWindow):
 
     def start_sin_ani(self):
         """Starts sin wave animation once start button is pushed."""
+        self.is_running_class.is_running = True
 
         pool = QThreadPool.globalInstance()
-        sin_data_fetcher = SinDataFetcher(self.sin_data)
+        sin_data_fetcher = SinDataFetcher(self.sin_data, self.is_running_class)
 
         current_time = datetime.datetime.now(datetime.UTC)
         date_time_format = "%Y_%m_%d-%H-%M-%S-%f%Z"
@@ -64,7 +68,7 @@ class MainWindow(QMainWindow):
 
         file_name = f"sin_log_{current_time_str}.npy"
         
-        data_log_runnable = DataLogRunnable(self.sin_data, file_name)
+        data_log_runnable = DataLogRunnable(self.sin_data, file_name, self.is_running_class)
         
 
         pool.start(sin_data_fetcher)
