@@ -55,3 +55,12 @@ Instead of overwriting the file, the new chunks are appended to the end of the f
 Once the main application is closed, a bool, is running, is updated to false.
 DataLogRunner will break once this bool is false to end the thread. 
 
+# Future tickets/known issues
+
+1. Not the biggest fan of QLineEdit - it reads the change in input right away while still typing /
+so typing a negative value will automatically error out since "-" is not a valid real number. /
+Would likely change to a different widget that is easier to change param values with.
+
+1. blit=False in matplotlib animation class. blit allows for smoother animation, which would be preferrable, /
+but requires returning Artist Objects which I haven't had time to explore. Future ticket could involve researching the necessary /
+implementation to use Artist Objects instead of updating a Line2D object for the sin figure animation.
